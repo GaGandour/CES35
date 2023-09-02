@@ -203,10 +203,7 @@ int main(int argc, char **argv)
     set_initial_drone_info(&drone);
 
     char expected_message = WHO_AND_WHERE;
-
-    // write(socket_fd, argv[2], strlen(argv[2])+1);
-  
-
+    
     while (1) {
         // Enter state machine. Forever wait for a server message,
         // deal with it and then expect the next one.
