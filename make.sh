@@ -1,0 +1,1 @@
+gcc test.cpp -o test && ./test && rm test
