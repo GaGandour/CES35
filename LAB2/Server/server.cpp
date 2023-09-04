@@ -42,8 +42,8 @@ int open_tcp_connection(
     /* Passive open. Wait for connection. */
 
     /* Socket creation */
-    int s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s < 0)
+    socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (socket_fd < 0)
     {
         printf("socket call failed");
         return -1;
@@ -51,16 +51,24 @@ int open_tcp_connection(
 
     /* Prevent errors, helps with reuse of address and port */
     int on = 1;
-    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on));
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on))) {
+        printf("Error preventing reuse of address!\n");
+    } else {
+        printf("Reuse of address should be working!\n");
+    }
 
     /* Set socket receive (read) timeout */
-    // struct timeval timeout;
-    // timeout.tv_sec = 1; /* Timeout in seconds*/
-    // timeout.tv_usec = 0; /* Prevent strange behavior from microseconds */
-    // setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+    struct timeval timeout;
+    timeout.tv_sec = 5; /* Timeout in seconds*/
+    timeout.tv_usec = 0; /* Prevent strange behavior from microseconds */
+    if(setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
+        printf("Error setting timeout!\n");
+    } else {
+        printf("Timeout should be working!\n");
+    }
 
     /* Binds the socket to the address and port number */
-    int b = bind(s, (struct sockaddr *)channel, sizeof(*channel));
+    int b = bind(socket_fd, (struct sockaddr *)channel, sizeof(*channel));
     if (b < 0)
     {
         printf("bind failed");
@@ -68,14 +76,14 @@ int open_tcp_connection(
     }
 
     /* Puts the server socket in a passive mode */
-    int l = listen(s, QUEUE_SIZE); /* specify queue size */
+    int l = listen(socket_fd, QUEUE_SIZE); /* specify queue size */
     if (l < 0)
     {
         printf("listen failed");
         return -1;
     }
 
-    return s;
+    return socket_fd;
 }
 
 char next_expected_response_type(char current_expected_response) {
@@ -179,8 +187,8 @@ int main(int argc, char *argv[])
     char buf[BUF_SIZE];         /* buffer for outgoing file */
     struct sockaddr_in channel; /* holds IP address */
 
-    int s = open_tcp_connection(socket_fd, &channel);
-    if (s < 0) {
+    socket_fd = open_tcp_connection(socket_fd, &channel);
+    if (socket_fd < 0) {
         return -1;
     }
     // Connection is now opened.
@@ -190,38 +198,43 @@ int main(int argc, char *argv[])
 
     char expected_message = WHO_AND_WHERE;
     
+    // definir a message[message length]
+    
     /* Socket is now set up and bound. Wait for connection and process it. */
     while (1)
     {
-        socket_fd = accept(s, 0, 0); /* block for connection request */
-        printf("New connection accepted!\n");
-        
-        if (socket_fd < 0)
-        {
-            printf("Accept failed\n");
-            exit(-1);
+        int socket_client_fd = accept(socket_fd, 0, 0); /* Block for connection request */
+        if (socket_client_fd < 0) { /* Connection timeout */
+            printf("No connection found! Keep looking...\n");
+            continue;
+        } else {
+            printf("New connection found!\n");
         }
-
+        // contador
         while(1) {
             /* Send initial message */
-            send_first_message(socket_fd);
+            send_first_message(socket_client_fd);
 
             /* Read responses and send messages according to custom protocol */
-            for(int message_counter = 0; message_counter < 3; message_counter++) {
-                num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
+            while(1) {
+                num_bytes = read(socket_client_fd, buf, BUF_SIZE); /* read from socket */
                 if (num_bytes > 0) {
+                    // contador = 0
                     // deal with data
                     printf("(<-) Received message: \n");
                     print_message(buf);
-                    deal_with_response(socket_fd, num_bytes, buf, &client_drone);
+                    deal_with_response(socket_client_fd, num_bytes, buf, &client_drone); // passar mensagem
+                    // manda a mensagem, (write)
                 } else {
+                    // contador++
                     printf("Read function error, returned: (%d)\n", num_bytes);
+                    // manda a mensagem, (write)
                 }
             }
             sleep(5);
         }
         
-        /* close connection */
-        // close(socket_fd); 
+        /* close connection if contador = 5 */
+        // close(socket_client_fd); 
     }
 }
