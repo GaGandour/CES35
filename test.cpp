@@ -1,14 +1,10 @@
 #include<stdio.h>
 
 int main () {
-    char buf[2];
-    buf[0] = 0x01;
-    buf[1] = 0x10;
-    
-    int result = buf[1] << 8 | buf[0];
+    char buf = 1;
 
-    printf("%d\n", result);
-
+    printf("%d\n", buf);
+    printf("%lu\n", sizeof(buf));
     printf("Hello World\n");
     return 0;
 }

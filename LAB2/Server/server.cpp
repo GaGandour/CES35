@@ -14,6 +14,8 @@
 
 #define QUEUE_SIZE 10
 
+// #define DEBUG
+
 void set_initial_drone_info(drone_info *drone) {
     drone->id = 0;
     drone->x = 0;
@@ -50,6 +52,12 @@ int open_tcp_connection(
     /* Prevent errors, helps with reuse of address and port */
     int on = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on));
+
+    /* Set socket receive (read) timeout */
+    // struct timeval timeout;
+    // timeout.tv_sec = 1; /* Timeout in seconds*/
+    // timeout.tv_usec = 0; /* Prevent strange behavior from microseconds */
+    // setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
 
     /* Binds the socket to the address and port number */
     int b = bind(s, (struct sockaddr *)channel, sizeof(*channel));
@@ -90,6 +98,15 @@ char message_type_to_response(char response) {
     return -1;
 }
 
+void send_first_message(int &socket_fd) {
+    char not_really_a_broadcast[MESSAGE_LENGTH];
+    not_really_a_broadcast[0] = WHO_AND_WHERE;
+    printf("\n---------------\n\n");
+    printf("(->) Sending message: \n");
+    print_message(not_really_a_broadcast);
+    write(socket_fd, not_really_a_broadcast, MESSAGE_LENGTH); 
+}
+
 void deal_with_response(
     int socket_fd, 
     int num_bytes_received,
@@ -103,7 +120,7 @@ void deal_with_response(
         return;
     }
     if (received_response[0] != expected_response) {
-        printf("ERROR: Expected response id (%c) != received response id (%c).\n", expected_response, received_response[0]);
+        printf("ERROR: Expected response type (%c) != received response type (%c).\n", expected_response, received_response[0]);
         return;
     }
 
@@ -137,7 +154,13 @@ void deal_with_response(
         return;
     }
 
-    printf("Writing message: %c\n", message[0]);
+    #ifdef DEBUG
+    fflush(stdin);
+    getchar();
+    fflush(stdin);
+    #endif
+    printf("(->) Sending message: \n");
+    print_message(message);
     write(socket_fd, message, MESSAGE_LENGTH);
     expected_response = next_expected_response_type(expected_response);
     return;
@@ -171,6 +194,8 @@ int main(int argc, char *argv[])
     while (1)
     {
         socket_fd = accept(s, 0, 0); /* block for connection request */
+        printf("New connection accepted!\n");
+        
         if (socket_fd < 0)
         {
             printf("Accept failed\n");
@@ -179,18 +204,18 @@ int main(int argc, char *argv[])
 
         while(1) {
             /* Send initial message */
-            char not_really_a_broadcast[MESSAGE_LENGTH];
-            not_really_a_broadcast[0] = WHO_AND_WHERE;
-            printf("\nWriting first message: %c\n", not_really_a_broadcast[0]);
-            write(socket_fd, not_really_a_broadcast, MESSAGE_LENGTH); 
+            send_first_message(socket_fd);
 
             /* Read responses and send messages according to custom protocol */
             for(int message_counter = 0; message_counter < 3; message_counter++) {
                 num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
                 if (num_bytes > 0) {
                     // deal with data
-                    printf("\nRead response: %c\n", buf[0]);
+                    printf("(<-) Received message: \n");
+                    print_message(buf);
                     deal_with_response(socket_fd, num_bytes, buf, &client_drone);
+                } else {
+                    printf("Read function error, returned: (%d)\n", num_bytes);
                 }
             }
             sleep(5);

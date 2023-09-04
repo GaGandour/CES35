@@ -12,6 +12,8 @@
 #include "../General/general.h"
 #include "../General/utilities.h"
 
+#define DEBUG
+
 void set_initial_drone_info(drone_info *drone) {
     drone->id = 1;
     drone->x = 5;
@@ -92,7 +94,7 @@ void deal_with_message(
         return;
     }
     if (received_message[0] != expected_message) {
-        printf("ERROR: Expected message id (%c) != received message id (%c).\n", expected_message, received_message[0]);
+        printf("ERROR: Expected message type (%d) != received message type (%d).\n", expected_message, received_message[0]);
         return;
     }
 
@@ -141,10 +143,15 @@ void deal_with_message(
         set_float_in_message(response, 11, drone->vz);
     }
 
-    printf("Writing response: %c\n", response[0]);
+    #ifdef DEBUG
+    fflush(stdin);
+    getchar();
+    fflush(stdin);
+    #endif
+    printf("(->) Sending message: \n");
+    print_message(response);
     write(socket_fd, response, MESSAGE_LENGTH);
     expected_message = next_expected_message_type(expected_message);
-    return;
 }
 
 int main(int argc, char **argv)
@@ -176,7 +183,8 @@ int main(int argc, char **argv)
         num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
         if (num_bytes > 0) {
             // deal with data
-            printf("\nRead message: %c\n", buf[0]);
+            printf("(<-) Received message: \n");
+            print_message(buf);
             deal_with_message(socket_fd, num_bytes, buf, &drone);
         }
         // continue indefinetely
