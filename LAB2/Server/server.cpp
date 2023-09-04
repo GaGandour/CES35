@@ -124,9 +124,9 @@ void deal_with_response(
         // Calculate new direction order
         // ...
         // Send MOVE_TO_THERE
-        set_float_in_message(message, 3, 1);
-        set_float_in_message(message, 7, 0);
-        set_float_in_message(message, 11, 0);
+        set_float_in_message(message, 3, 10);
+        set_float_in_message(message, 7, 10);
+        set_float_in_message(message, 11, 10);
     }
     else if (received_response[0] == ON_MY_WAY) {
         // Update client's drone new speed
@@ -137,7 +137,7 @@ void deal_with_response(
         return;
     }
 
-    printf("Writing message: %s\n", message);
+    printf("Writing message: %c\n", message[0]);
     write(socket_fd, message, MESSAGE_LENGTH);
     expected_response = next_expected_response_type(expected_response);
     return;
@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
         socket_fd = accept(s, 0, 0); /* block for connection request */
         if (socket_fd < 0)
         {
-            printf("accept failed");
+            printf("Accept failed\n");
             exit(-1);
         }
 
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
             /* Send initial message */
             char not_really_a_broadcast[MESSAGE_LENGTH];
             not_really_a_broadcast[0] = WHO_AND_WHERE;
-            printf("\nWriting first message: %s\n", not_really_a_broadcast);
+            printf("\nWriting first message: %c\n", not_really_a_broadcast[0]);
             write(socket_fd, not_really_a_broadcast, MESSAGE_LENGTH); 
 
             /* Read responses and send messages according to custom protocol */
@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
                 num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
                 if (num_bytes > 0) {
                     // deal with data
-                    printf("\nRead response: %s\n", buf);
+                    printf("\nRead response: %c\n", buf[0]);
                     deal_with_response(socket_fd, num_bytes, buf, &client_drone);
                 }
             }

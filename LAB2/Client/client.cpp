@@ -141,7 +141,7 @@ void deal_with_message(
         set_float_in_message(response, 11, drone->vz);
     }
 
-    printf("Writing response: %s\n", response);
+    printf("Writing response: %c\n", response[0]);
     write(socket_fd, response, MESSAGE_LENGTH);
     expected_message = next_expected_message_type(expected_message);
     return;
@@ -176,7 +176,7 @@ int main(int argc, char **argv)
         num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
         if (num_bytes > 0) {
             // deal with data
-            printf("\nRead message: %s\n", buf);
+            printf("\nRead message: %c\n", buf[0]);
             deal_with_message(socket_fd, num_bytes, buf, &drone);
         }
         // continue indefinetely
