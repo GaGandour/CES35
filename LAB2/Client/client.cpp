@@ -1,7 +1,4 @@
-/* This page contains a client program that can request a file from the server program
-* on the next page. The server responds by sending the whole file.
-*/
-
+/* This is the client code */
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
@@ -12,32 +9,8 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define SERVER_PORT 8080 /* arbitrary, but client & server must agree */
-#define BUFSIZE 4096  /* block transfer size */
-#define MESSAGE_LENGTH 14
-
-#define WHO_AND_WHERE 1
-#define ME_AND_HERE 2
-#define WHAT_SPEED 3
-#define THIS_SPEED 4
-#define MOVE_TO_THERE 5
-#define ON_MY_WAY 6
-
-#define DRONE_SPEED 1.0
-
-
-typedef struct drone_info {
-    int id;
-    float x;
-    float y;
-    float z;
-
-    float vx;
-    float vy;
-    float vz;
-
-    int status;
-} drone_info;
+#include "../General/general.h"
+#include "../General/utilities.h"
 
 void set_initial_drone_info(drone_info *drone) {
     drone->id = 1;
@@ -106,26 +79,6 @@ char response_type_to_message(char message) {
     return -1;
 }
 
-float get_float_from_message(char *message, int offset) {
-    float result;
-    memcpy(&result, message+offset, sizeof(result));
-    return result;
-}
-
-void set_float_in_message(char *message, int offset, float value) {
-    memcpy(message+offset, &value, sizeof(value));
-}
-
-int get_id_from_message(char *message) {
-    return message[1] << 8 | message[2];
-}
-
-void set_id_in_message(char *message, int id) {
-    message[1] = id >> 8;
-    message[2] = id & 0xFF;
-}
-
-
 void deal_with_message(
     int socket_fd, // will be used to send response
     int num_bytes_received,
@@ -134,8 +87,14 @@ void deal_with_message(
 ) {
     static char expected_message = WHO_AND_WHERE;
 
-    if (num_bytes_received != MESSAGE_LENGTH) return;
-    if (received_message[0] != expected_message) return;
+    if (num_bytes_received != MESSAGE_LENGTH) {
+        printf("ERROR: Number of bytes received (%d) != expected (%d).\n", num_bytes_received, MESSAGE_LENGTH);
+        return;
+    }
+    if (received_message[0] != expected_message) {
+        printf("ERROR: Expected message id (%c) != received message id (%c).\n", expected_message, received_message[0]);
+        return;
+    }
 
     char response[MESSAGE_LENGTH];
     // set response type
@@ -150,14 +109,20 @@ void deal_with_message(
         set_float_in_message(response, 11, drone->z);
     }
     else if (received_message[0] == WHAT_SPEED) {
-        if (get_id_from_message(received_message) != drone->id) return;
+        if (get_id_from_message(received_message) != drone->id) {
+            printf("ERROR: Id from message (%d) != id from this drone (%d)", get_id_from_message(received_message), drone->id);
+            return;
+        } 
         // Send THIS_SPEED
         set_float_in_message(response, 3, drone->vx);
         set_float_in_message(response, 7, drone->vy);
         set_float_in_message(response, 11, drone->vz);
     }
     else if (received_message[0] == MOVE_TO_THERE) {
-        if (get_id_from_message(received_message) != drone->id) return;
+        if (get_id_from_message(received_message) != drone->id) {
+            printf("ERROR: Id from message (%d) != id from this drone (%d)", get_id_from_message(received_message), drone->id);
+            return;
+        }
         // Update drone info
         float target_x, target_y, target_z;
         target_x = get_float_from_message(received_message, 3);
@@ -166,7 +131,7 @@ void deal_with_message(
         float dx = target_x - drone->x;
         float dy = target_y - drone->y;
         float dz = target_z - drone->z;
-        float distance = sqrtf(dx*dx + dy*dy + dz*dz);
+        float distance = sqrt(dx*dx + dy*dy + dz*dz);
         drone->vx = DRONE_SPEED * dx / distance;
         drone->vy = DRONE_SPEED * dy / distance;
         drone->vz = DRONE_SPEED * dz / distance;
@@ -176,6 +141,7 @@ void deal_with_message(
         set_float_in_message(response, 11, drone->vz);
     }
 
+    printf("Writing response: %s\n", response);
     write(socket_fd, response, MESSAGE_LENGTH);
     expected_message = next_expected_message_type(expected_message);
     return;
@@ -189,7 +155,7 @@ int main(int argc, char **argv)
     }
 
     int num_bytes, socket_fd;
-    char buf[BUFSIZE];  /* buffer for incoming file */
+    char buf[BUF_SIZE];  /* buffer for incoming file */
     struct hostent * host;  /* info about server */
     struct sockaddr_in channel; /* holds IP address */
 
@@ -207,18 +173,12 @@ int main(int argc, char **argv)
     while (1) {
         // Enter state machine. Forever wait for a server message,
         // deal with it and then expect the next one.
-        num_bytes = read(socket_fd, buf, BUFSIZE); /* read from socket */
+        num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
         if (num_bytes > 0) {
             // deal with data
+            printf("\nRead message: %s\n", buf);
             deal_with_message(socket_fd, num_bytes, buf, &drone);
         }
         // continue indefinetely
-    }
-
-
-    while (1) {
-        num_bytes = read(socket_fd, buf, BUFSIZE); /* read from socket */
-        if (num_bytes <= 0) exit(0); /* check for end of file */
-        write(1, buf, num_bytes);  /* write to standard output */
     }
 }

@@ -1,0 +1,5 @@
+LAB1/
+
+# Ignore binaries
+LAB2/Client/client
+LAB2/Server/server
