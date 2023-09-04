@@ -1,4 +1,5 @@
 /* This is the client code */
+
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
@@ -12,7 +13,7 @@
 #include "../General/general.h"
 #include "../General/utilities.h"
 
-#define DEBUG
+// #define DEBUG
 
 void set_initial_drone_info(drone_info *drone) {
     drone->id = 1;
@@ -34,30 +35,43 @@ int establish_tcp_connection(
     char *server_name
 ) {
 
-    // look up host’s IP address
+    /* Look up host’s IP address */
     host = gethostbyname(server_name); 
     if (!host) {
-        printf("gethostbyname failed to locate %s", server_name); 
+        printf("Failed to locate %s using gethostbyname.\n", server_name); 
         return -1;
     }
   
-    // Open socket file descriptor
+    /* Open socket file descriptor */
     socket_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (socket_fd < 0) {
-        printf("socket call failed");
+        printf("Socket call failed.\n");
         return -1;
     }
+
+    /* Set socket receive (connect, read, ...) timeout */
+    struct timeval timeout;
+    timeout.tv_sec = 10; /* Timeout in seconds*/
+    timeout.tv_usec = 0; /* Prevent strange behavior from microseconds */
+    if(setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
+        printf("Error setting timeout!\n");
+        return -1;
+    } else {
+        printf("Timeout should be working!\n");
+    }
     
-    memset(channel, 0, sizeof(*channel));
-    channel->sin_family= AF_INET;
+    /* Build address structure to bind to socket */
+    memset(channel, 0, sizeof(*channel)); /* Zero channel */
+    channel->sin_family= AF_INET; /* Different hosts connected by IPV4 */
     memcpy(&channel->sin_addr.s_addr, host->h_addr, host->h_length);
     channel->sin_port= htons(SERVER_PORT);
     
     int connection = connect(socket_fd, (struct sockaddr *) channel, sizeof(*channel));
     if (connection < 0) {
-        printf("connect failed"); 
+        printf("Connection failed.\n"); 
         return -1;
     }
+
     return 0;
 }
 
@@ -82,9 +96,10 @@ char response_type_to_message(char message) {
 }
 
 void deal_with_message(
-    int socket_fd, // will be used to send response
+    int socket_fd,
     int num_bytes_received,
     char *received_message,
+    char *response,
     drone_info * drone
 ) {
     static char expected_message = WHO_AND_WHERE;
@@ -98,38 +113,35 @@ void deal_with_message(
         return;
     }
 
-    char response[MESSAGE_LENGTH];
-    // set response type
+    /* Set response type and drone id */
     response[0] = response_type_to_message(expected_message);
-    // set drone id in message
     set_id_in_message(response, drone->id);
 
     if (received_message[0] == WHO_AND_WHERE) {
-        // Send ME_AND_HERE
+        /* Compose ME_AND_HERE with drone's position before sending it */
         set_float_in_message(response, 3, drone->x);
         set_float_in_message(response, 7, drone->y);
         set_float_in_message(response, 11, drone->z);
     }
     else if (received_message[0] == WHAT_SPEED) {
         if (get_id_from_message(received_message) != drone->id) {
-            printf("ERROR: Id from message (%d) != id from this drone (%d)", get_id_from_message(received_message), drone->id);
+            printf("ERROR: message's target ID (%d) != drone ID (%d)\n", get_id_from_message(received_message), drone->id);
             return;
         } 
-        // Send THIS_SPEED
+        /* Compose THIS_SPEED with drone's speed before sending it */
         set_float_in_message(response, 3, drone->vx);
         set_float_in_message(response, 7, drone->vy);
         set_float_in_message(response, 11, drone->vz);
     }
     else if (received_message[0] == MOVE_TO_THERE) {
         if (get_id_from_message(received_message) != drone->id) {
-            printf("ERROR: Id from message (%d) != id from this drone (%d)", get_id_from_message(received_message), drone->id);
+            printf("ERROR: message's target ID (%d) != drone ID (%d)\n", get_id_from_message(received_message), drone->id);
             return;
         }
-        // Update drone info
-        float target_x, target_y, target_z;
-        target_x = get_float_from_message(received_message, 3);
-        target_y = get_float_from_message(received_message, 7);
-        target_z = get_float_from_message(received_message, 11);
+        /* Update drone's speed based on new target position */
+        float target_x = get_float_from_message(received_message, 3);
+        float target_y = get_float_from_message(received_message, 7);
+        float target_z = get_float_from_message(received_message, 11);
         float dx = target_x - drone->x;
         float dy = target_y - drone->y;
         float dz = target_z - drone->z;
@@ -137,21 +149,37 @@ void deal_with_message(
         drone->vx = DRONE_SPEED * dx / distance;
         drone->vy = DRONE_SPEED * dy / distance;
         drone->vz = DRONE_SPEED * dz / distance;
-        // Send ON_MY_WAY
+        /* Compose ON_MY_WAY with drone's new speed before sending it */
         set_float_in_message(response, 3, drone->vx);
         set_float_in_message(response, 7, drone->vy);
         set_float_in_message(response, 11, drone->vz);
-    }
-
-    #ifdef DEBUG
-    fflush(stdin);
-    getchar();
-    fflush(stdin);
-    #endif
-    printf("(->) Sending message: \n");
-    print_message(response);
-    write(socket_fd, response, MESSAGE_LENGTH);
+    }   
+    /* Update to next expected message type */
     expected_message = next_expected_message_type(expected_message);
+}
+
+void send_response(int &socket_fd, char *response, int show_in_terminal = 1) {
+    if (show_in_terminal) {
+        #ifdef DEBUG
+        fflush(stdin);
+        getchar();
+        fflush(stdin);
+        #endif
+        printf("(->) Sending response:\n");
+        print_message(response);
+        printf("---\n\n");
+    }
+    if (write(socket_fd, response, MESSAGE_LENGTH) < 0) {
+        printf("Error writing to socket!\n");
+    }
+}
+
+void read_message(int &socket_client_fd, int &num_bytes, char *buf) {
+    num_bytes = read(socket_client_fd, buf, MESSAGE_LENGTH);
+    if (num_bytes > 0) {
+        printf("(<-) Received message:\n");
+        print_message(buf);
+    }
 }
 
 int main(int argc, char **argv)
@@ -161,32 +189,41 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    int num_bytes, socket_fd;
-    char buf[BUF_SIZE];  /* buffer for incoming file */
-    struct hostent * host;  /* info about server */
-    struct sockaddr_in channel; /* holds IP address */
+    int socket_fd;              /* Socket file descriptor */
+    int num_bytes_read;         /* Number of bytes received */
+    char buf[BUF_SIZE];         /* Buffer for incoming data */
+    struct hostent * host;      /* Info about server */
+    struct sockaddr_in channel; /* Holds IP address */
 
     int tcp_connection_status = establish_tcp_connection(socket_fd, &channel, host, argv[1]);
     if (tcp_connection_status < 0) {
         return -1;
+    } else {
+        printf("Connection with server established.\n\n");
+        printf("----------------------------------\n\n");
     }
-    // Connection is now established.
+    /* Connection is now established */
     
     drone_info drone;
     set_initial_drone_info(&drone);
 
-    char expected_message = WHO_AND_WHERE;
-    
-    while (1) {
-        // Enter state machine. Forever wait for a server message,
-        // deal with it and then expect the next one.
-        num_bytes = read(socket_fd, buf, BUF_SIZE); /* read from socket */
-        if (num_bytes > 0) {
-            // deal with data
-            printf("(<-) Received message: \n");
-            print_message(buf);
-            deal_with_message(socket_fd, num_bytes, buf, &drone);
+    int error_counter = 0;
+    char response[MESSAGE_LENGTH];
+
+    /* Read messages and send responses according to protocol */
+    while (error_counter < MAX_CONSECUTIVE_ERRORS) {
+        read_message(socket_fd, num_bytes_read, buf);
+        if (num_bytes_read > 0) {
+            error_counter = 0; /* Successfull read, reset counter */
+            deal_with_message(socket_fd, num_bytes_read, buf, response, &drone);
+            send_response(socket_fd, response, 1);
+        } else {
+            error_counter++; /* Error reading, increase counter */
+            printf("(!) Did not receive a message, sending response again. [%d]\n\n", error_counter);
+            send_response(socket_fd, response, 0);
         }
-        // continue indefinetely
     }
+    close(socket_fd); /* Close connection */
+    printf("Too many consecutive reading errors. Ending connection.\n\n");
+    printf("----------------------------------\n\n");
 }

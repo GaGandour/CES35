@@ -4,6 +4,7 @@
 #define SERVER_PORT 8080 /* arbitrary, but client & server must agree */
 #define BUF_SIZE 4096  /* block transfer size */
 #define MESSAGE_LENGTH 15
+#define MAX_CONSECUTIVE_ERRORS 5
 
 #define WHO_AND_WHERE 1
 #define ME_AND_HERE 2

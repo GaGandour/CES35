@@ -1,4 +1,5 @@
 /* This is the server code */
+
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
@@ -14,7 +15,7 @@
 
 #define QUEUE_SIZE 10
 
-// #define DEBUG
+#define DEBUG
 
 void set_initial_drone_info(drone_info *drone) {
     drone->id = 0;
@@ -33,19 +34,16 @@ int open_tcp_connection(
     int &socket_fd,
     struct sockaddr_in *channel
 ) {
-
-    /* Build address structure to bind to socket. */
-    memset(channel, 0, sizeof(*channel)); /* zero channel */
-    channel->sin_family = AF_INET; /* different hosts connected by IPV4 */
+    /* Build address structure to bind to socket */
+    memset(channel, 0, sizeof(*channel)); /* Zero channel */
+    channel->sin_family = AF_INET; /* Different hosts connected by IPV4 */
     channel->sin_addr.s_addr = htonl(INADDR_ANY);
     channel->sin_port = htons(SERVER_PORT);
-    /* Passive open. Wait for connection. */
 
-    /* Socket creation */
+    /* Open socket file descriptor */
     socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (socket_fd < 0)
-    {
-        printf("socket call failed");
+    if (socket_fd < 0) {
+        printf("Socket call failed.\n");
         return -1;
     }
 
@@ -53,33 +51,31 @@ int open_tcp_connection(
     int on = 1;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on))) {
         printf("Error preventing reuse of address!\n");
+        return -1;
     } else {
         printf("Reuse of address should be working!\n");
     }
 
-    /* Set socket receive (read) timeout */
+    /* Set socket receive (accept, read, ...) timeout */
     struct timeval timeout;
-    timeout.tv_sec = 5; /* Timeout in seconds*/
+    timeout.tv_sec = 10; /* Timeout in seconds*/
     timeout.tv_usec = 0; /* Prevent strange behavior from microseconds */
     if(setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
         printf("Error setting timeout!\n");
+        return -1;
     } else {
         printf("Timeout should be working!\n");
     }
 
     /* Binds the socket to the address and port number */
-    int b = bind(socket_fd, (struct sockaddr *)channel, sizeof(*channel));
-    if (b < 0)
-    {
-        printf("bind failed");
+    if (bind(socket_fd, (struct sockaddr *)channel, sizeof(*channel)) < 0) {
+        printf("Bind failed.\n");
         return -1;
     }
 
     /* Puts the server socket in a passive mode */
-    int l = listen(socket_fd, QUEUE_SIZE); /* specify queue size */
-    if (l < 0)
-    {
-        printf("listen failed");
+    if (listen(socket_fd, QUEUE_SIZE) < 0) { /* specify queue size */
+        printf("Listen failed.\n");
         return -1;
     }
 
@@ -107,19 +103,45 @@ char message_type_to_response(char response) {
 }
 
 void send_first_message(int &socket_fd) {
-    char not_really_a_broadcast[MESSAGE_LENGTH];
-    not_really_a_broadcast[0] = WHO_AND_WHERE;
-    printf("\n---------------\n\n");
-    printf("(->) Sending message: \n");
-    print_message(not_really_a_broadcast);
-    write(socket_fd, not_really_a_broadcast, MESSAGE_LENGTH); 
+    char first_message[MESSAGE_LENGTH];
+    first_message[0] = WHO_AND_WHERE;
+    printf("(->) Sending message:\n");
+    print_message(first_message);
+    if (write(socket_fd, first_message, MESSAGE_LENGTH) < 0) {
+        printf("Error writing to socket!\n");
+    }
+}
+
+void send_message(int &socket_fd, char *message, int show_in_terminal = 1) {
+    if (show_in_terminal) {
+        #ifdef DEBUG
+        fflush(stdin);
+        getchar();
+        fflush(stdin);
+        #endif
+        printf("(->) Sending message:\n");
+        print_message(message);
+    }
+    if (write(socket_fd, message, MESSAGE_LENGTH) < 0) {
+        printf("Error writing to socket!\n");
+    }
+}
+
+void read_response(int &socket_client_fd, int &num_bytes, char *buf) {
+    num_bytes = read(socket_client_fd, buf, MESSAGE_LENGTH);
+    if (num_bytes > 0) {
+        printf("(<-) Received response:\n");
+        print_message(buf);
+        printf("---\n\n");
+    }
 }
 
 void deal_with_response(
     int socket_fd, 
     int num_bytes_received,
     char *received_response,
-    drone_info * drone
+    char *message,
+    drone_info *drone
 ) {
     static char expected_response = ME_AND_HERE;
 
@@ -128,113 +150,92 @@ void deal_with_response(
         return;
     }
     if (received_response[0] != expected_response) {
-        printf("ERROR: Expected response type (%c) != received response type (%c).\n", expected_response, received_response[0]);
+        printf("ERROR: Expected response type (%d) != received response type (%d).\n", expected_response, received_response[0]);
         return;
     }
 
-    char message[MESSAGE_LENGTH];
-    // set message type
+    /* Set message type and drone id */
     message[0] = message_type_to_response(expected_response);
-    // set drone id in message
     set_id_in_message(message, get_id_from_message(received_response));
 
+    /* Update to next expected response type */
+    expected_response = next_expected_response_type(expected_response);
+
     if (received_response[0] == ME_AND_HERE) {
-        // Update client's drone position
+        /* Update client's drone position */
         // ...
-        // Send WHAT_SPEED
     }
     else if (received_response[0] == THIS_SPEED) {
-        // Update client's drone speed
+        /* Update client's drone speed */
         // ...
-        // Calculate new direction order
+        /* Calculate new direction order */
         // ...
-        // Send MOVE_TO_THERE
+        /* Compose MOVE_TO_THERE before sending it */
         set_float_in_message(message, 3, 10);
         set_float_in_message(message, 7, 10);
         set_float_in_message(message, 11, 10);
     }
     else if (received_response[0] == ON_MY_WAY) {
-        // Update client's drone new speed
+        /* Update client's drone new speed */
         // ...
-        expected_response = next_expected_response_type(expected_response);
-        // Return before sending a direct message, 
-        // next one should be broadcast!
-        return;
     }
-
-    #ifdef DEBUG
-    fflush(stdin);
-    getchar();
-    fflush(stdin);
-    #endif
-    printf("(->) Sending message: \n");
-    print_message(message);
-    write(socket_fd, message, MESSAGE_LENGTH);
-    expected_response = next_expected_response_type(expected_response);
-    return;
 }
 
 int main(int argc, char *argv[])
 {
-    if (argc != 1)
-    {
+    if (argc != 1) {
         printf("Usage: ./server");
         return -1;
     }
 
-    int socket_fd, num_bytes;
-
-    char buf[BUF_SIZE];         /* buffer for outgoing file */
-    struct sockaddr_in channel; /* holds IP address */
+    int socket_fd;              /* Socket file descriptor */
+    int num_bytes_read;         /* Number of bytes received */
+    char buf[BUF_SIZE];         /* Buffer for incoming data */
+    struct sockaddr_in channel; /* Holds IP address */
 
     socket_fd = open_tcp_connection(socket_fd, &channel);
     if (socket_fd < 0) {
         return -1;
     }
-    // Connection is now opened.
+    /* Connection is now opened */
 
-    drone_info server_drone, client_drone;
+    drone_info server_drone, client_drone; 
     set_initial_drone_info(&server_drone);
-
-    char expected_message = WHO_AND_WHERE;
     
-    // definir a message[message length]
-    
-    /* Socket is now set up and bound. Wait for connection and process it. */
+    /* Socket is now set up and bound, wait for connection and process it */
     while (1)
     {
         int socket_client_fd = accept(socket_fd, 0, 0); /* Block for connection request */
-        if (socket_client_fd < 0) { /* Connection timeout */
+        if (socket_client_fd < 0) { /* Connection request timeout */
             printf("No connection found! Keep looking...\n");
             continue;
-        } else {
-            printf("New connection found!\n");
-        }
-        // contador
-        while(1) {
-            /* Send initial message */
-            send_first_message(socket_client_fd);
+        } 
+        printf("Connection found!\n\n");
+        printf("-----------------\n\n");
 
-            /* Read responses and send messages according to custom protocol */
-            while(1) {
-                num_bytes = read(socket_client_fd, buf, BUF_SIZE); /* read from socket */
-                if (num_bytes > 0) {
-                    // contador = 0
-                    // deal with data
-                    printf("(<-) Received message: \n");
-                    print_message(buf);
-                    deal_with_response(socket_client_fd, num_bytes, buf, &client_drone); // passar mensagem
-                    // manda a mensagem, (write)
-                } else {
-                    // contador++
-                    printf("Read function error, returned: (%d)\n", num_bytes);
-                    // manda a mensagem, (write)
-                }
-            }
-            sleep(5);
-        }
+        send_first_message(socket_client_fd);
         
-        /* close connection if contador = 5 */
-        // close(socket_client_fd); 
+        int error_counter = 0;
+        char message[MESSAGE_LENGTH];
+
+        /* Read responses and send messages according to protocol */
+        while(error_counter < MAX_CONSECUTIVE_ERRORS) {
+            read_response(socket_client_fd, num_bytes_read, buf);
+            if(num_bytes_read > 0) {
+                error_counter = 0; /* Successfull read, reset counter */
+                deal_with_response(socket_client_fd, num_bytes_read, buf, message, &client_drone); /* Compose new message */
+                #ifndef DEBUG
+                if (message[0] == WHO_AND_WHERE) sleep(5);
+                #endif
+                send_message(socket_client_fd, message, 1); /* Send message */
+            } else {
+                error_counter++; /* Error reading, increase counter */
+                printf("(!) Did not receive a response, sending message again. [%d]\n\n", error_counter);
+                send_message(socket_client_fd, message, 0);  /* Send message again */
+            }
+        }
+        close(socket_client_fd); /* Close connection */
+        printf("Too many consecutive reading errors. Ending connection.\n\n");
+        printf("-----------------\n\n");
     }
 }
