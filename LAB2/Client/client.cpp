@@ -9,6 +9,7 @@
 #include <math.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <signal.h>
 
 #include "../General/general.h"
 #include "../General/utilities.h"
@@ -59,6 +60,9 @@ int establish_tcp_connection(
     } else {
         printf("Timeout should be working!\n");
     }
+
+    /* Prevent killing client when server closes connection */
+    signal(SIGPIPE, SIG_IGN); 
     
     /* Build address structure to bind to socket */
     memset(channel, 0, sizeof(*channel)); /* Zero channel */
@@ -95,7 +99,7 @@ char response_type_to_message(char message) {
     return -1;
 }
 
-void deal_with_message(
+int deal_with_message(
     int socket_fd,
     int num_bytes_received,
     char *received_message,
@@ -106,11 +110,11 @@ void deal_with_message(
 
     if (num_bytes_received != MESSAGE_LENGTH) {
         printf("ERROR: Number of bytes received (%d) != expected (%d).\n", num_bytes_received, MESSAGE_LENGTH);
-        return;
+        return -1;
     }
     if (received_message[0] != expected_message) {
         printf("ERROR: Expected message type (%d) != received message type (%d).\n", expected_message, received_message[0]);
-        return;
+        return -1;
     }
 
     /* Set response type and drone id */
@@ -126,7 +130,7 @@ void deal_with_message(
     else if (received_message[0] == WHAT_SPEED) {
         if (get_id_from_message(received_message) != drone->id) {
             printf("ERROR: message's target ID (%d) != drone ID (%d)\n", get_id_from_message(received_message), drone->id);
-            return;
+            return -1;
         } 
         /* Compose THIS_SPEED with drone's speed before sending it */
         set_float_in_message(response, 3, drone->vx);
@@ -136,7 +140,7 @@ void deal_with_message(
     else if (received_message[0] == MOVE_TO_THERE) {
         if (get_id_from_message(received_message) != drone->id) {
             printf("ERROR: message's target ID (%d) != drone ID (%d)\n", get_id_from_message(received_message), drone->id);
-            return;
+            return -1;
         }
         /* Update drone's speed based on new target position */
         float target_x = get_float_from_message(received_message, 3);
@@ -156,16 +160,13 @@ void deal_with_message(
     }   
     /* Update to next expected message type */
     expected_message = next_expected_message_type(expected_message);
+
+    return 0;
 }
 
 void send_response(int &socket_fd, char *response, int show_in_terminal = 1) {
     if (show_in_terminal) {
-        #ifdef DEBUG
-        fflush(stdin);
-        getchar();
-        fflush(stdin);
-        #endif
-        printf("(->) Sending response:\n");
+        printf("(->): ");
         print_message(response);
         printf("---\n\n");
     }
@@ -175,9 +176,14 @@ void send_response(int &socket_fd, char *response, int show_in_terminal = 1) {
 }
 
 void read_message(int &socket_client_fd, int &num_bytes, char *buf) {
+    #ifdef DEBUG
+    fflush(stdin);
+    getchar();
+    fflush(stdin);
+    #endif
     num_bytes = read(socket_client_fd, buf, MESSAGE_LENGTH);
     if (num_bytes > 0) {
-        printf("(<-) Received message:\n");
+        printf("(<-): ");
         print_message(buf);
     }
 }
@@ -215,15 +221,16 @@ int main(int argc, char **argv)
         read_message(socket_fd, num_bytes_read, buf);
         if (num_bytes_read > 0) {
             error_counter = 0; /* Successfull read, reset counter */
-            deal_with_message(socket_fd, num_bytes_read, buf, response, &drone);
+            if (deal_with_message(socket_fd, num_bytes_read, buf, response, &drone) < 0)
+                continue;
             send_response(socket_fd, response, 1);
         } else {
             error_counter++; /* Error reading, increase counter */
             printf("(!) Did not receive a message, sending response again. [%d]\n\n", error_counter);
-            send_response(socket_fd, response, 1);
+            send_response(socket_fd, response, 0);
         }
     }
     close(socket_fd); /* Close connection */
-    printf("Too many consecutive reading errors. Ending connection.\n\n");
+    printf("Too many consecutive errors. Ending connection.\n\n");
     printf("----------------------------------\n\n");
 }

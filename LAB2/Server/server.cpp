@@ -109,7 +109,7 @@ char message_type_to_response(char response) {
 void send_first_message(int &socket_fd) {
     char first_message[MESSAGE_LENGTH];
     first_message[0] = WHO_AND_WHERE;
-    printf("(->) Sending message:\n");
+    printf("(->): ");
     print_message(first_message);
     if (write(socket_fd, first_message, MESSAGE_LENGTH) < 0) {
         printf("Error writing to socket!\n");
@@ -117,60 +117,51 @@ void send_first_message(int &socket_fd) {
 }
 
 void send_message(int &socket_fd, char *message, int show_in_terminal = 1) {
-    printf("morri 1\n");
     if (show_in_terminal) {
-        printf("morri 2\n");
-        #ifdef DEBUG
-        fflush(stdin);
-        getchar();
-        fflush(stdin);
-        #endif
-        printf("(->) Sending message:\n");
-        printf("morri 3\n");
+        printf("(->): ");
         print_message(message);
-        printf("morri 4\n");
     }
-    printf("morri 4\n");
     if (write(socket_fd, message, MESSAGE_LENGTH) < 0) {
-        printf("morri 6\n");
         printf("Error writing to socket!\n");
     }
-    printf("morri 7\n");
 }
 
 void read_response(int &socket_client_fd, int &num_bytes, char *buf) {
+    #ifdef DEBUG
+    fflush(stdin);
+    getchar();
+    fflush(stdin);
+    #endif
     num_bytes = read(socket_client_fd, buf, MESSAGE_LENGTH);
     if (num_bytes > 0) {
-        printf("(<-) Received response:\n");
+        printf("(<-): ");
         print_message(buf);
-        printf("---\n\n");
     }
 }
 
-void deal_with_response(
+int deal_with_response(
     int socket_fd, 
     int num_bytes_received,
+    char *expected_response_type,
     char *received_response,
     char *message,
     drone_info *drone
 ) {
-    static char expected_response = ME_AND_HERE;
-
     if (num_bytes_received != MESSAGE_LENGTH) {
         printf("ERROR: Number of bytes received (%d) != expected (%d).\n", num_bytes_received, MESSAGE_LENGTH);
-        return;
+        return -1;
     }
-    if (received_response[0] != expected_response) {
-        printf("ERROR: Expected response type (%d) != received response type (%d).\n", expected_response, received_response[0]);
-        return;
+    if (received_response[0] != *expected_response_type) {
+        printf("ERROR: Expected response type (%d) != received response type (%d).\n", *expected_response_type, received_response[0]);
+        return -1;
     }
 
     /* Set message type and drone id */
-    message[0] = message_type_to_response(expected_response);
+    message[0] = message_type_to_response(*expected_response_type);
     set_id_in_message(message, get_id_from_message(received_response));
 
     /* Update to next expected response type */
-    expected_response = next_expected_response_type(expected_response);
+    *expected_response_type = next_expected_response_type(*expected_response_type);
 
     if (received_response[0] == ME_AND_HERE) {
         /* Update client's drone position */
@@ -190,6 +181,8 @@ void deal_with_response(
         /* Update client's drone new speed */
         // ...
     }
+
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -228,13 +221,16 @@ int main(int argc, char *argv[])
         
         int error_counter = 0;
         char message[MESSAGE_LENGTH];
+        char expected_response_type = ME_AND_HERE;
 
         /* Read responses and send messages according to protocol */
         while(error_counter < MAX_CONSECUTIVE_ERRORS) {
             read_response(socket_client_fd, num_bytes_read, buf);
             if(num_bytes_read > 0) {
                 error_counter = 0; /* Successfull read, reset counter */
-                deal_with_response(socket_client_fd, num_bytes_read, buf, message, &client_drone); /* Compose new message */
+                if (deal_with_response(socket_client_fd, num_bytes_read, &expected_response_type, buf, message, &client_drone) < 0) /* Compose new message */
+                    continue;
+                printf("---\n\n");
                 #ifndef DEBUG
                 if (message[0] == WHO_AND_WHERE) sleep(5);
                 #endif
@@ -242,11 +238,11 @@ int main(int argc, char *argv[])
             } else {
                 error_counter++; /* Error reading, increase counter */
                 printf("(!) Did not receive a response, sending message again. [%d]\n\n", error_counter);
-                send_message(socket_client_fd, message, 1);  /* Send message again */
+                send_message(socket_client_fd, message, 0);  /* Send message again */
             }
         }
         close(socket_client_fd); /* Close connection */
-        printf("Too many consecutive reading errors. Ending connection.\n\n");
+        printf("Too many consecutive errors. Ending connection.\n\n");
         printf("-----------------\n\n");
     }
 }
