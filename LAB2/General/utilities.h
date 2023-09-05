@@ -40,19 +40,19 @@ void print_message(char *message) {
         printf("WHO_AND_WHERE?");
         break;
     case ME_AND_HERE:
-        printf("ME_AND_HERE! ID: %d, X: %f, Y: %f, Z: %f", drone_id, x, y, z);
+        printf("ME_AND_HERE! ID: %d, X: %.2f, Y: %.2f, Z: %.2f", drone_id, x, y, z);
         break;
     case WHAT_SPEED:
         printf("WHAT_SPEED? Asking ID %d", drone_id);
         break;
     case THIS_SPEED:
-        printf("THIS_SPEED! ID: %d, Vx: %f, Vy: %f, Vz: %f", drone_id, x, y, z);
+        printf("THIS_SPEED! ID: %d, Vx: %.2f, Vy: %.2f, Vz: %.2f", drone_id, x, y, z);
         break;
     case MOVE_TO_THERE:
-        printf("MOVE_TO_THERE! Commanding ID: %d, X: %f, Y: %f, Z: %f", drone_id, x, y, z);
+        printf("MOVE_TO_THERE! Commanding ID: %d, X: %.2f, Y: %.2f, Z: %.2f", drone_id, x, y, z);
         break;
     case ON_MY_WAY:
-        printf("ON_MY_WAY! ID: %d, Updated Velocity: Vx: %f, Vy: %f, Vz: %f", drone_id, x, y, z);
+        printf("ON_MY_WAY! ID: %d, Updated Velocity: Vx: %.2f, Vy: %.2f, Vz: %.2f", drone_id, x, y, z);
         break;
     default:
         printf("ERROR: Unknown message type: %d", message_type);
