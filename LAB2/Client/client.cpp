@@ -191,7 +191,7 @@ int main(int argc, char **argv)
 
     int socket_fd;              /* Socket file descriptor */
     int num_bytes_read;         /* Number of bytes received */
-    char buf[BUF_SIZE];         /* Buffer for incoming data */
+    char buf[MESSAGE_LENGTH];   /* Buffer for incoming data */
     struct hostent * host;      /* Info about server */
     struct sockaddr_in channel; /* Holds IP address */
 
@@ -220,7 +220,7 @@ int main(int argc, char **argv)
         } else {
             error_counter++; /* Error reading, increase counter */
             printf("(!) Did not receive a message, sending response again. [%d]\n\n", error_counter);
-            send_response(socket_fd, response, 0);
+            send_response(socket_fd, response, 1);
         }
     }
     close(socket_fd); /* Close connection */

@@ -9,13 +9,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <signal.h>
 
 #include "../General/general.h"
 #include "../General/utilities.h"
 
 #define QUEUE_SIZE 10
 
-#define DEBUG
+// #define DEBUG
 
 void set_initial_drone_info(drone_info *drone) {
     drone->id = 0;
@@ -67,6 +68,9 @@ int open_tcp_connection(
         printf("Timeout should be working!\n");
     }
 
+    /* Prevent killing server when client closes connection */
+    signal(SIGPIPE, SIG_IGN); 
+
     /* Binds the socket to the address and port number */
     if (bind(socket_fd, (struct sockaddr *)channel, sizeof(*channel)) < 0) {
         printf("Bind failed.\n");
@@ -113,18 +117,25 @@ void send_first_message(int &socket_fd) {
 }
 
 void send_message(int &socket_fd, char *message, int show_in_terminal = 1) {
+    printf("morri 1\n");
     if (show_in_terminal) {
+        printf("morri 2\n");
         #ifdef DEBUG
         fflush(stdin);
         getchar();
         fflush(stdin);
         #endif
         printf("(->) Sending message:\n");
+        printf("morri 3\n");
         print_message(message);
+        printf("morri 4\n");
     }
+    printf("morri 4\n");
     if (write(socket_fd, message, MESSAGE_LENGTH) < 0) {
+        printf("morri 6\n");
         printf("Error writing to socket!\n");
     }
+    printf("morri 7\n");
 }
 
 void read_response(int &socket_client_fd, int &num_bytes, char *buf) {
@@ -190,7 +201,7 @@ int main(int argc, char *argv[])
 
     int socket_fd;              /* Socket file descriptor */
     int num_bytes_read;         /* Number of bytes received */
-    char buf[BUF_SIZE];         /* Buffer for incoming data */
+    char buf[MESSAGE_LENGTH];   /* Buffer for incoming data */
     struct sockaddr_in channel; /* Holds IP address */
 
     socket_fd = open_tcp_connection(socket_fd, &channel);
@@ -231,7 +242,7 @@ int main(int argc, char *argv[])
             } else {
                 error_counter++; /* Error reading, increase counter */
                 printf("(!) Did not receive a response, sending message again. [%d]\n\n", error_counter);
-                send_message(socket_client_fd, message, 0);  /* Send message again */
+                send_message(socket_client_fd, message, 1);  /* Send message again */
             }
         }
         close(socket_client_fd); /* Close connection */
