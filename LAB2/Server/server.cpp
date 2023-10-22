@@ -207,8 +207,7 @@ int main(int argc, char *argv[])
     set_initial_drone_info(&server_drone);
     
     /* Socket is now set up and bound, wait for connection and process it */
-    while (1)
-    {
+    while (1) {
         int socket_client_fd = accept(socket_fd, 0, 0); /* Block for connection request */
         if (socket_client_fd < 0) { /* Connection request timeout */
             printf("No connection found! Keep looking...\n");
@@ -221,6 +220,7 @@ int main(int argc, char *argv[])
         
         int error_counter = 0;
         char message[MESSAGE_LENGTH];
+        message[0] = WHO_AND_WHERE;
         char expected_response_type = ME_AND_HERE;
 
         /* Read responses and send messages according to protocol */
